@@ -1,0 +1,78 @@
+# ===========================
+# Dependências
+# ===========================
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# ===========================
+# Builds e compilações
+# ===========================
+client/dist/
+client/build/
+server/dist/
+
+# ===========================
+# Variáveis de ambiente e segredos
+# NÃO subir NUNCA — use .env.example
+# ===========================
+.env
+.env.local
+.env.development
+.env.production
+server/.env
+client/.env
+client/.env.local
+
+# ===========================
+# Banco de dados SQLite
+# ===========================
+server/data/
+*.db
+*.db-shm
+*.db-wal
+
+# ===========================
+# Logs
+# ===========================
+*.log
+npm-debug.log*
+logs/
+
+# ===========================
+# Cache e ferramentas
+# ===========================
+.cache/
+.vite/
+client/.vite/
+.eslintcache
+
+# ===========================
+# IDEs e editores
+# ===========================
+.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# ===========================
+# TypeScript
+# ===========================
+*.tsbuildinfo
+
+# ===========================
+# Testes e cobertura
+# ===========================
+coverage/
+.nyc_output/
+
+# ===========================
+# Temporários
+# ===========================
+tmp/
+temp/

@@ -1,0 +1,21 @@
+{
+  "name": "jogocarta",
+  "version": "1.0.0",
+  "description": "TCG online em tempo real — React + Node.js + Socket.io",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --names \"CLIENT,SERVER\" --prefix-colors \"cyan,yellow\" \"npm run dev --prefix client\" \"npm run dev --prefix server\"",
+    "build": "npm run build --prefix client && npm run build --prefix server",
+    "install:client": "npm install --prefix client",
+    "install:server": "npm install --prefix server",
+    "postinstall": "npm install --prefix client && npm install --prefix server && node scripts/setup.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SilvioGui/JogoCarta.git"
+  },
+  "license": "ISC"
+}

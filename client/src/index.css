@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+/* ============================================================
+   SISTEMA DE TEMAS — JOGOCARTA
+   Modo Escuro (padrão): preto + dourado
+   Modo Claro: cinza + azul escuro
+   ============================================================ */
+
+:root {
+  /* Backgrounds */
+  --bg-primary: #08080e;
+  --bg-secondary: #10101a;
+  --bg-card: #16162280;
+  --bg-card-solid: #161622;
+  --bg-card-hover: #1c1c2c;
+  --bg-input: #0d0d18;
+
+  /* Bordas */
+  --border: #252538;
+  --border-bright: #38385a;
+  --border-accent: rgba(201, 169, 75, 0.4);
+
+  /* Acento principal (dourado no escuro) */
+  --accent: #c9a94b;
+  --accent-hover: #d9bc6a;
+  --accent-dim: #9a7e35;
+  --accent-glow: rgba(201, 169, 75, 0.25);
+  --accent-subtle: rgba(201, 169, 75, 0.08);
+  --accent-text: #c9a94b;
+
+  /* Textos */
+  --text-primary: #e8e8f0;
+  --text-secondary: #7878a0;
+  --text-muted: #44446a;
+  --text-on-accent: #0a0a0f;
+
+  /* Feedback */
+  --error: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.1);
+  --error-border: rgba(239, 68, 68, 0.3);
+  --success: #22c55e;
+  --warning: #f59e0b;
+
+  /* Gradiente de fundo */
+  --bg-gradient: radial-gradient(ellipse at 30% 10%, #1a1035 0%, #0a080f 50%, #08080e 100%);
+  --bg-gradient-subtle: radial-gradient(ellipse at 70% 90%, rgba(201,169,75,0.04) 0%, transparent 60%);
+}
+
+/* ============================================================
+   MODO CLARO: cinza + azul escuro
+   ============================================================ */
+.light {
+  --bg-primary: #eef0f7;
+  --bg-secondary: #e4e6f0;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-card-solid: #ffffff;
+  --bg-card-hover: #f0f2ff;
+  --bg-input: #f5f6fa;
+
+  --border: #c8cce0;
+  --border-bright: #a0a6c0;
+  --border-accent: rgba(26, 47, 94, 0.35);
+
+  --accent: #1a2f5e;
+  --accent-hover: #243d7a;
+  --accent-dim: #3a5590;
+  --accent-glow: rgba(26, 47, 94, 0.15);
+  --accent-subtle: rgba(26, 47, 94, 0.06);
+  --accent-text: #1a2f5e;
+
+  --text-primary: #1a1a2e;
+  --text-secondary: #4a4a70;
+  --text-muted: #8888aa;
+  --text-on-accent: #ffffff;
+
+  --error: #dc2626;
+  --error-bg: rgba(220, 38, 38, 0.08);
+  --error-border: rgba(220, 38, 38, 0.25);
+  --success: #16a34a;
+  --warning: #d97706;
+
+  --bg-gradient: radial-gradient(ellipse at 30% 10%, #d8dff5 0%, #eef0f7 50%, #e8eaf5 100%);
+  --bg-gradient-subtle: radial-gradient(ellipse at 70% 90%, rgba(26,47,94,0.04) 0%, transparent 60%);
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--bg-gradient);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    margin: 0;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  input:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px var(--bg-input) inset !important;
+    -webkit-text-fill-color: var(--text-primary) !important;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+/* ============================================================
+   UTILITÁRIOS DE ANIMAÇÃO
+   ============================================================ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 15px var(--accent-glow); }
+  50%       { box-shadow: 0 0 30px var(--accent-glow), 0 0 60px var(--accent-glow); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
+
+/* Scrollbar customizada */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-dim);
+}
