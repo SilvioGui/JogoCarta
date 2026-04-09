@@ -4,6 +4,8 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { LobbyPage } from './pages/LobbyPage';
 import { MainMenuPage } from './pages/MainMenuPage';
+import { GamePage } from './pages/GamePage';
+import { PlayPage } from './pages/PlayPage';
 import { AuthGuard } from './components/auth/AuthGuard';
 import { useAuthStore } from './store/auth.store';
 import { api } from './services/api';
@@ -46,6 +48,22 @@ function AppRoutes() {
         element={
           <AuthGuard>
             <MainMenuPage />
+          </AuthGuard>
+        }
+      />
+      <Route
+        path="/play"
+        element={
+          <AuthGuard>
+            <PlayPage />
+          </AuthGuard>
+        }
+      />
+      <Route
+        path="/game"
+        element={
+          <AuthGuard>
+            <GamePage />
           </AuthGuard>
         }
       />

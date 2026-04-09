@@ -127,7 +127,7 @@ function buildMenuItems(
       description: t.play.description,
       status: t.play.status,
       tutorial: t.play.tutorial,
-      onActivate: () => navigate('/game'),
+      onActivate: () => navigate('/play'),
     },
     {
       key: 'decks',

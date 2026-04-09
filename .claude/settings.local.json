@@ -4,7 +4,8 @@
       "Bash(npm create:*)",
       "Bash(npx tsc:*)",
       "Bash(npm run:*)",
-      "Bash(node -e \"require\\('better-sqlite3'\\)\")"
+      "Bash(node -e \"require\\('better-sqlite3'\\)\")",
+      "Bash(node -e \"const db = require\\('better-sqlite3'\\)\\(':memory:'\\); const row = db.prepare\\('SELECT 1+1 as result'\\).get\\(\\); console.log\\('SQLite OK:', row.result\\);\")"
     ]
   }
 }

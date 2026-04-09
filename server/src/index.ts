@@ -5,11 +5,21 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
 import { createServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 import { runMigrations } from './db/migrate';
 import authRoutes from './api/routes/auth.routes';
+import deckRoutes from './api/routes/deck.routes';
+import { registerGameHandlers } from './socket/game.socket';
+import { registerMatchmakingHandlers } from './socket/matchmaking.socket';
 
 const app = express();
 const httpServer = createServer(app);
+const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    credentials: true,
+  },
+});
 
 // Segurança
 app.use(helmet({
@@ -46,8 +56,34 @@ app.use('/api', rateLimit({
   legacyHeaders: false,
 }));
 
-// Rotas
+// Rotas HTTP
 app.use('/api/auth', authRoutes);
+app.use('/api/decks', deckRoutes);
+
+// Socket.io — autenticar e registrar handlers de jogo
+io.use((socket, next) => {
+  // Autenticação via token na query ou handshake
+  const token = socket.handshake.auth.token as string | undefined;
+  if (!token) return next(new Error('Token não fornecido'));
+
+  try {
+    const jwt = require('jsonwebtoken');
+    const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as { sub: string; username: string };
+    (socket as unknown as { data: { userId: string; username: string } }).data = {
+      userId: payload.sub,
+      username: payload.username,
+    };
+    next();
+  } catch {
+    next(new Error('Token inválido'));
+  }
+});
+
+io.on('connection', (socket) => {
+  console.log(`[Socket] Conectado: ${(socket as unknown as { data: { username: string } }).data.username}`);
+  registerGameHandlers(io, socket);
+  registerMatchmakingHandlers(io, socket);
+});
 
 // Health check
 app.get('/api/health', (_req, res) => {

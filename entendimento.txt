@@ -1,0 +1,578 @@
+================================================================================
+ENTENDIMENTO DO PROJETO — JOGOCARTA
+Leitura completa de: Jogo carta/ (ideias, regras, arquetipos, decklists)
+================================================================================
+
+
+================================================================================
+1. VISÃO GERAL
+================================================================================
+
+JogoCarta é um TCG (Trading Card Game) online estratégico criado por Bruno Bento.
+Inspirado em Magic: The Gathering (formato Commander) e Yu-Gi-Oh!, mas com
+identidade própria. O objetivo central do design é criar partidas ÉPICAS e LONGAS,
+decididas por estratégia e não por quem jogou mais rápido nos primeiros turnos.
+
+O jogo é desktop-first (tabuleiro grande), multiplayer online em tempo real via
+WebSocket. A stack escolhida é React (frontend) + Node.js/Express + Socket.io
+(backend) + SQLite (banco de dados).
+
+
+================================================================================
+2. ESTRUTURA DO DECK
+================================================================================
+
+- Main Deck:    100 cartas exatas. Máximo 3 cópias por carta.
+- Extra Deck:   5 Comandantes. Sempre visível para AMBOS os jogadores.
+- Relíquias:    Obrigatório exatamente 6 modelos x 2 cópias = 12 cartas.
+                São cartas híbridas (/ Terreno) com efeito único poderoso.
+- Mão inicial:  7 cartas.
+- Mulligan:     1 vez por partida (devolve 7, compra 7 novas).
+- Limite de mão: 9 cartas (efeitos podem alterar).
+- Zonas por linha: Infinitas (sem limite de espaço no campo).
+
+
+================================================================================
+3. CONDIÇÕES DE VITÓRIA
+================================================================================
+
+- Reduzir o HP do oponente a 0 (começa com 100 HP cada jogador).
+- Deck Out: oponente precisa comprar carta mas o deck acabou.
+- Empate: ambos chegam a 0 HP ao mesmo tempo OU ambos sofrem Deck Out simultâneo.
+
+
+================================================================================
+4. CAMPO DE BATALHA — SISTEMA DE DUAS LINHAS
+================================================================================
+
+Cada jogador tem duas linhas:
+
+  LINHA SUPERIOR (Front / Combate):
+    - Cartas aqui atacam e bloqueiam.
+    - É onde o combate acontece.
+
+  LINHA INFERIOR (Back / Retaguarda / Recursos):
+    - Cartas em Modo Recurso geram Éter.
+    - Suporte, Estruturas, Artefatos.
+    - Monstros comuns aqui NÃO geram Éter automaticamente.
+
+Regras de movimentação:
+  - Back → Front (Avanço): custa 2 Éter.
+  - Front → Back (Retirada): a carta NÃO pode ter atacado nem defendido neste turno.
+
+Isso impede que uma unidade ataque e depois se proteja ou gere recursos na mesma
+rodada, além de exigir investimento para colocar unidades em posição de ataque.
+
+
+================================================================================
+5. SISTEMA DE RECURSOS — ÉTER
+================================================================================
+
+- O jogo NÃO distribui Éter automaticamente. Depende totalmente das cartas em campo.
+- Gerado por: cartas em Modo Recurso na Linha Inferior + Estruturas ativas.
+- Fórmula: Éter Total = Soma(cartas em Modo Recurso) + Estruturas ativas.
+- 1 Terreno pode ser jogado de GRAÇA por turno na Retaguarda (Custo 0).
+- Éter não gasto RESETA para 0 no fim do turno.
+- Exceção: Dragões com a mecânica "Tesouro" preservam Éter entre turnos,
+  mas esse Éter só pode ser usado em cartas do arquétipo Dragão.
+
+TERRENOS HÍBRIDOS (/ Terreno):
+  - Não existem cartas exclusivamente terreno. Usam tipagem híbrida.
+  - Quando jogados na Retaguarda em Modo Recurso:
+      * Geram +1 de Éter por turno.
+      * Ficam SILENCIADAS (sem nome, stats ou efeitos ativos).
+      * Devem permanecer assim por pelo menos 1 round completo.
+  - Ação de Reversão (Ligar):
+      * Na Fase Principal, o jogador pode "Ligar" qualquer número de cartas
+        em Modo Recurso.
+      * Custo: Gratuito (0 Éter), salvo texto da carta.
+      * A carta para de gerar Éter.
+      * Recupera Nome, Tipo, Poder, Vida e Efeitos.
+      * Mágicas Híbridas revertidas são ativadas IMEDIATAMENTE na Corrente
+        e depois vão ao Cemitério.
+  - Estratégia: converter economia em exército ou salva de feitiços surpresa.
+
+
+================================================================================
+6. FASES DO TURNO
+================================================================================
+
+INÍCIO → COMPRA → FASE PRINCIPAL 1 → COMBATE → FASE PRINCIPAL 2 → FIM
+
+- INÍCIO:          Efeitos de início disparam. Cartas viradas são desviradas.
+- COMPRA:          Compra 1 carta do Main Deck.
+                   EXCEÇÃO: Quem começa PULA a compra no 1º turno.
+- FASE PRINCIPAL 1: Jogar cartas, ativar efeitos, mover entre linhas.
+- COMBATE:         Declarar atacantes e bloqueadores (detalhe abaixo).
+- FASE PRINCIPAL 2: Ativar efeitos, preparar defesas, jogar mais cartas.
+- FIM:             Descartar até 9 cartas na mão. Éter reseta para 0.
+
+Exaustão (Virar):
+  - Carta deve ser VIRADA ao declarar ataque.
+  - Carta deve ser VIRADA se habilidade exige isso como custo.
+  - Cartas viradas não podem atacar ou usar habilidades de virar até
+    serem desviradas no início do próximo turno do dono.
+
+
+================================================================================
+7. FASE DE COMBATE — PASSO A PASSO
+================================================================================
+
+Passo 1 — Declaração de Ataque:
+  Escolhe unidade na Linha Superior que não atacou este turno.
+  Seleciona o alvo: deve ser criatura na Linha Superior inimiga.
+  Se a Linha Superior inimiga estiver vazia, o ataque vai direto aos 100 HP.
+
+Passo 2 — Interceptação / Bloqueio (opcional):
+  Provocar e Intervenção podem redirecionar o ataque.
+
+Passo 3 — Janela de Reação (Pilha do Combate):
+  Antes do dano, abre janela para Reações, Tocaia, Buffs.
+  Resolvidos pela Corrente de Habilidades (LIFO).
+
+Passo 4 — Troca de Dano (Simultânea):
+  Atacante recebe dano = Poder Defensor.
+  Defensor recebe dano = Poder Atacante.
+  NÃO HÁ "quem bate primeiro" salvo habilidade específica.
+  DANO EXCEDENTE: Se atacante (10 D) bate em defensor (2 V), os 8 excedentes
+  NÃO passam para o jogador. A menos que o atacante tenha ATROPELAR ou PERFURAR.
+
+Passo 5 — Resolução de Mortes:
+  Unidades com Vida <= 0 vão ao Cemitério.
+  EXCLUSIVAMENTE aqui que Último Suspiro é acionado na Corrente.
+
+
+================================================================================
+8. CORRENTE DE HABILIDADES (SISTEMA DE PILHA)
+================================================================================
+
+Sistema LIFO — Last In, First Out. Baseado na pilha do Magic: The Gathering.
+
+Regra de Ouro: O último efeito ativado é o primeiro a resolver.
+
+Exemplo:
+  - Jogador A usa Bola de Fogo no monstro de B. (Corrente 1)
+  - Jogador B responde com Escudo de Vidro. (Corrente 2)
+  - Jogador A responde com Quebrar Encanto. (Corrente 3)
+  Resolução:
+    Corrente 3 resolve: Escudo é destruído.
+    Corrente 2 falha: Escudo não se formou.
+    Corrente 1 resolve: Bola de Fogo acerta o monstro desprotegido.
+
+Reações podem entrar na pilha a QUALQUER momento de prioridade.
+
+
+================================================================================
+9. VISIBILIDADE DAS ZONAS
+================================================================================
+
+- Main Deck:   PRIVADO. Ninguém vê a ordem. Embaralhar reseta o conhecimento.
+- Mão:         PRIVADA. Oponente vê apenas a QUANTIDADE, nunca o conteúdo.
+- Extra Deck:  PÚBLICO. Qualquer jogador pode consultar as 5 cartas do oponente
+               a qualquer momento. Isso permite prever condições de vitória inimigas.
+- Cemitério:   PÚBLICO. Cartas viradas para cima. Qualquer um pode folhear.
+- Campo:       PÚBLICO. Stats visíveis e atualizados em tempo real.
+               Mágicas viradas para baixo (se existirem) são exceção.
+
+
+================================================================================
+10. TOKENS
+================================================================================
+
+- Criados por efeitos de cartas (Filhotes de Aranha, Sucata de Goblin, Tentáculos).
+- Não existem fisicamente no deck.
+- Custo: sempre 0 de Éter.
+- Ao serem destruídos: vão ao Cemitério momentaneamente (ativam Último Suspiro).
+- Após resolução do Último Suspiro: BANIDOS do jogo. NÃO permanecem no Cemitério.
+- Consequência: Tokens NÃO podem ser alvo de Exumar.
+
+
+================================================================================
+11. TIPOS DE CARTAS
+================================================================================
+
+1. MONSTRO (Unidade):
+   Possui Dano (D) e Vida (V). Pode ficar no Front ou Retaguarda.
+   Subtipos: Horror, Fera, Insetóide, Mecânico, etc.
+
+2. MÁGICA (Feitiço):
+   Uso único. Vai ao Cemitério após resolver.
+   Só pode ser jogada na sua Fase Principal (salvo Ímpeto).
+
+3. REAÇÃO (Instantânea):
+   Pode ser jogada no SEU turno ou no turno do OPONENTE em resposta a uma ação.
+
+4. ESTRUTURA (Permanente):
+   Sem Dano (D). Tem Vida (V) fixa, pode ser atacada.
+   Bônus passivos, ocupa Retaguarda.
+
+5. ARTEFATO (Equipamento / Utilitário):
+   Se equipado em Monstro e o Monstro morrer, Artefato geralmente é destruído junto
+   (salvo texto contrário).
+
+6. TERRENO (Híbrida / Recurso):
+   Marcação "/ Terreno". Gera Éter quando na Retaguarda em Modo Recurso.
+
+7. RELÍQUIA (O Coração do Éter):
+   Categoria especial obrigatória. Híbrida.
+   Regra 6x2: todo deck DEVE ter 6 modelos diferentes x 2 cópias = 12 cartas.
+   Geram X de Éter + Efeito Único e poderoso ligado à estratégia do arquétipo.
+
+8. EXTRA DECK (Comandante):
+   5 cartas por deck. Zona separada, sempre visível.
+   Curva sugerida: 1 Early (custo 1-3) / 2 Mid (4-6) / 2 Late (7+).
+   Invocados via recurso especial do arquétipo (ex: Fé dos Anjos).
+
+9. TOKEN (Ficha):
+   Gerado por efeitos. Ao sair do campo, deixa de existir.
+
+
+================================================================================
+12. FILOSOFIA DE DESIGN — OS 5 PILARES
+================================================================================
+
+1. ESCALONAMENTO E INEVITABILIDADE:
+   Partidas não decididas nos primeiros 3 turnos.
+   Early: defesa, posicionamento, geração de Éter.
+   Mid: primeiros Comandantes de suporte.
+   Late: "Bombas" (Cartas Colossais) definem a vitória.
+
+2. A BARREIRA DOS 100 HP:
+   Dano direto ao jogador é escasso e difícil.
+   Burn foca em remover unidades, não em matar o jogador rápido.
+   O combate entre criaturas é o motor principal.
+
+3. EXTRA DECK DINÂMICO (5 Comandantes):
+   Permite "fases de jogo" com escalonamento progressivo.
+   O oponente SABE o que vem — cria meta-jogo de antecipação.
+
+4. O CORAÇÃO DO ÉTER (12 Relíquias):
+   Garante ferramentas variadas para economia + defesa.
+   6 modelos diferentes = variedade de estratégia.
+
+5. MECÂNICAS DE REVIRAVOLTA:
+   Board Wipes: todo deck deve ter 2-3 formas de limpar o campo.
+   Recursão (Exumar): trazer ameaças do cemitério mantém pressão no Late Game.
+
+
+================================================================================
+13. REGRA 3+2 DOS ARQUÉTIPOS
+================================================================================
+
+Todo arquétipo DEVE ter:
+  - 3 mecânicas PRINCIPAIS: ditam e limitam o combo de vitória.
+  - 2 mecânicas SECUNDÁRIAS: ferramentas de suporte que não vencem sozinhas.
+
+
+================================================================================
+14. OS 10 ARQUÉTIPOS
+================================================================================
+
+--------------------------------------------------------------------------------
+ANJOS — A Ordem Celestial
+--------------------------------------------------------------------------------
+Tema: Ordem / Luz. Estilo: Defesa absoluta e controle de dano.
+
+Mecânicas Principais:
+  1. SISTEMA DE FÉ: Recurso extra cumulativo (não reseta). Gerado ao sobreviver
+     a danos ou Meditar na Retaguarda. Usado para invocar o Extra Deck sem Éter.
+     Obriga o oponente a atacar para evitar acúmulo.
+  2. MILAGRES: Reações de proteção ultra-eficientes. Se tiver X+ de Fé ao ativar,
+     a carta RETORNA ao deck em vez de ir ao Cemitério. Nunca sofrem Deck Out.
+  3. HIERARQUIA: Bônus de posição. Cartas de alta patente concedem Blindado/Égide
+     às unidades imediatamente à esquerda ou direita na mesma linha.
+
+Regra de Estilo "Bastião Sagrado":
+  Com 10+ de Fé, dano máximo que o jogador pode sofrer de qualquer fonte = 5.
+
+Fraqueza: Lentos no início. Dependem muito de proteger as fontes de Fé.
+
+--------------------------------------------------------------------------------
+DEMÔNIOS — O Pacto de Sangue
+--------------------------------------------------------------------------------
+Tema: Caos / Trevas. Estilo: Alto risco, alta recompensa.
+
+Mecânicas Principais:
+  1. OFERENDA: Pagar Pontos de Vida em vez de Éter para invocar cartas.
+     Ex: abrir mão de 15 HP no Turno 2 para colocar ameaça de custo 6.
+  2. VINGANÇA: Quando HP cai abaixo de 50, todas as habilidades de Vingança
+     são DOBRADAS. Meta-jogo de "não deixar o demônio com 30 HP".
+  3. EXUMAR: Invocar monstros do cemitério pagando Vida adicional além do custo.
+
+Regra de Estilo "Desejo Carnal":
+  Ao causar dano de combate direto ao HP inimigo, recupera 2 de Vida.
+
+Fraqueza: Bombas-relógio. Burn os mata facilmente se errarem o cálculo de Oferenda.
+
+--------------------------------------------------------------------------------
+DRAGÕES — A Fúria Primordial
+--------------------------------------------------------------------------------
+Tema: Poder bruto. Estilo: Investimento alto, payoff devastador.
+
+Mecânicas Principais:
+  1. TESOURO: Éter não gasto no fim do turno não é perdido — vira Tesouro.
+     Tesouro só pode ser usado em cartas do arquétipo Dragão.
+     Simula paciência do dragão dormindo sobre ouro.
+  2. SOBRECARGA: Gasta Éter do próximo turno adiantado para efeitos massivos agora.
+     No próximo turno, penalidade de Éter disponível.
+  3. ATROPELAR + PERFURAR: Dano excedente passa para o jogador (Atropelar).
+     Ignora Blindado e Escudo Divino (Perfurar).
+
+Regra de Estilo "Dominância Aérea":
+  Se TODOS os Monstros no campo tiverem Voar, ganham +2 de Dano ao atacar.
+
+Fraqueza: Caros demais. Um Board Wipe destrói o investimento de Tesouro acumulado.
+
+--------------------------------------------------------------------------------
+ABISSAIS — Horror Oceânico
+--------------------------------------------------------------------------------
+Tema: Horror das profundezas. Estilo: Controle de deck, mobilidade tática, paciência.
+
+Mecânicas Principais:
+  1. FLUXO DA MARÉ: Segundo recurso além do Éter. Acumular Maré ativa habilidades
+     devastadoras e invoca Leviatãs adormecidos.
+  2. DANÇA DAS PROFUNDEZAS (Avanço & Retirada): Alta mobilidade. Unidades ganham
+     bônus ao "Emergir" para combate (Avanço) ou "Submergir" para retaguarda (Retirada).
+     Permite ataques surpresa e recuos estratégicos.
+  3. ESCAVAÇÃO E DESTINO (Dragar & Vaticinar): Controle absoluto do deck.
+     Dragar: olhar X cartas do FUNDO do deck, escolher uma.
+     Vaticinar: olhar X cartas do TOPO do deck, reorganizar.
+
+Mecânicas Secundárias:
+  1. CALMARIA SOMBRIA: Aprisionar e Silenciar para paralisar ameaças inimigas.
+  2. FORÇA ABISSAL: Veneno + Predadores para desgastar ameaças maiores.
+
+Decklist completa: 100 cartas (52 Monstros / 30 Mágicas-Reações / 18 Estruturas-Artefatos)
++ 5 Comandantes já documentados.
+
+Fraqueza: Mid/Late Game. Frágil no começo, precisa de economia antes de agir.
+
+--------------------------------------------------------------------------------
+MECÂNICOS — A Engrenagem Perfeita
+--------------------------------------------------------------------------------
+Tema: Tecnologia. Estilo: Rede sinérgica de robôs, Artefatos e Estruturas.
+
+Mecânicas Principais:
+  1. SIMBIOSE: Cartas recebem e concedem bônus para cada Mecânico ADJACENTE na
+     mesma linha. Diferente da Hierarquia (Anjos), afeta apenas o subtipo Mecânico.
+  2. LINHA DE MONTAGEM (Herança / Upgrade): Ao morrer, unidade transforma-se em
+     Equipamento e acopla ao Mecânico mais próximo, transferindo seus atributos.
+  3. GERADORES (Canalizar + Sobrecarga): Melhores Estruturas do jogo.
+     Canalizar: virar robô na Retaguarda para concentrar Éter excedente em canhão.
+
+Regra de Estilo "Manutenção Operacional":
+  Com 1 Estrutura + 1 Artefato no campo, Mecânicos não pagam o custo de 2 Éter
+  para Avanço da Retaguarda para o Front.
+
+Fraqueza: Board Wipes destroem a cadeia de Simbiose.
+
+--------------------------------------------------------------------------------
+PÚTRIDOS — A Praga Infindável
+--------------------------------------------------------------------------------
+Tema: Mortos-Vivos. Estilo: Desgaste, morte vantajosa, correntes de zumbis.
+
+Mecânicas Principais:
+  1. ÚLTIMO SUSPIRO: Grande maioria dos Pútridos tem efeitos ao morrer.
+     O oponente É PUNIDO por limpar o campo deles.
+  2. CICLO DE ECO: Ao morrer, transfere atributos base para a próxima unidade
+     invocada na mesma linha. Cria "correntes de zumbis" que escalam em poder.
+  3. DEGRADAÇÃO CONTAGIOSA: Ao causar OU receber dano, aplica contadores de
+     Podridão no inimigo. Cada contador reduz Vida Base do inimigo PERMANENTEMENTE.
+
+Regra de Estilo "Terreno Amaldiçoado":
+  Quando aliado na Linha Superior é destruído, a próxima carta custará -1 Éter.
+
+Fraqueza: Vida e dano baixos. Exílio e Silenciar (anulan Último Suspiro) os neutralizam.
+
+--------------------------------------------------------------------------------
+GOBLINS — Mestres da Sucata
+--------------------------------------------------------------------------------
+Tema: Tribo caótica. Estilo: Enxame, sabotagem econômica, Artefatos instáveis.
+
+Mecânicas Principais:
+  1. SISTEMA DE SUCATA: Geram Tokens de Sucata (Artefatos 0 custo / 1V).
+     Combustível para outras cartas ou sacrifício para invocar monstros maiores.
+  2. ROUBO DE ÉTER ESPECIALIZADO: Roubam Éter mesmo sem dano direto,
+     apenas ao entrar no campo ou ao serem destruídos.
+  3. ENGENHOCAS INSTÁVEIS: Artefatos com Sobrecarga — bônus massivos agora,
+     penalidade no próximo turno.
+
+Regra de Estilo "Mestre da Sucata":
+  Com 3+ Sucatas na Linha Inferior, todos os Monstros Goblins no Front
+  ganham +2 de Dano e Ímpeto.
+
+Fraqueza: Vida baixa. Remoção fácil os paralisa. Roubo não funciona se oponente
+         gastar todo Éter no próprio turno.
+
+--------------------------------------------------------------------------------
+ESPECTROS — Espíritos Inquietos
+--------------------------------------------------------------------------------
+Tema: Almas / Éter. Estilo: Evasão pura, ataques diretos, maldições.
+
+Mecânicas Principais:
+  1. AMEDRONTAR: Unidades inimigas com Poder inferior não podem bloquear ou atacar
+     o Espectro. "Passa reto" por defesas pequenas.
+  2. MUNDO INCORPÓREO: Ao usar Retirada para a Linha Inferior, em vez de gerar Éter,
+     ganha SOMBRA: imune a Mágicas e efeitos de alvo até o próximo turno.
+  3. POSSESSÃO (Infundir Negativo): Ao ser destruído em combate, NÃO vai ao
+     Cemitério. Anexa-se à unidade que o matou, maldizendo-a com
+     1 de Dano verdadeiro por turno OU perdendo 1 de Poder até morrer.
+
+Regra de Estilo "Passagem Etérea":
+  Inimigos com Possessão não podem usar Retirada nem atacar sem pagar 1 Éter extra.
+
+Fraqueza: Menor pool de Vida do jogo. AoE os varre completamente.
+
+--------------------------------------------------------------------------------
+ARANHAS — A Tocaia Implacável
+--------------------------------------------------------------------------------
+Tema: Insetóides. Estilo: Paralisia, enxame, veneno acumulativo.
+
+Mecânicas Principais:
+  1. APRISIONAR (Casulo): Impede movimentação, ataques e habilidades do alvo por X
+     turnos. Unidades no Casulo podem ser DEVORADAS por Aranhas para ganho de Vida/Éter.
+  2. INFESTAÇÃO: Geração massiva de Tokens Filhote de Aranha (1/1). Ativam bônus
+     de Sacrifício e Horda em bando.
+  3. VENENO NECRÓTICO: Ataques reduzem o PODER (Dano) do alvo PERMANENTEMENTE.
+
+Mecânicas Secundárias:
+  1. TOCAIA (Emboscada): Mover ou invocar unidades da Retaguarda para o Front no
+     turno do OPONENTE como Reação (Custo: 1 Éter).
+  2. TEIA DE RADAR: Estruturas de Teia ignoram Sombra e Furtividade inimiga.
+
+Decklist completa documentada.
+
+Fraqueza: Individualmente frágeis. Precisam da rede de Teias e Casulos para sobreviver.
+
+--------------------------------------------------------------------------------
+SOMBRIOS — Os Ladrões de Éter
+--------------------------------------------------------------------------------
+Tema: Furtividade. Estilo: Sabotagem econômica, assassinatos, emboscadas.
+
+Mecânicas Principais:
+  1. ASSALTO (Roubo): Subtraem Éter acumulado inimigo e transferem para si.
+     Obriga oponente a gastar todo Éter no próprio turno para não ser roubado.
+  2. PASSO DAS SOMBRAS (Emboscada / Flash): Criaturas podem ser jogadas da mão
+     durante o turno do oponente, especialmente ao declarar ataque.
+  3. CONTRATO (Marca da Morte): Aplicam "Marca da Morte" em inimigos.
+     Se o marcado morrer naquele turno, Sombrio recebe recompensa imediata
+     (comprar carta, ganhar Vida, roubar Éter extra).
+
+Regra de Estilo "Ninguém Escapa":
+  Inimigos com Marca da Morte não podem usar Retirada nem atacar sem pagar 1 Éter extra.
+
+Fraqueza: Dependem do oponente ter Éter sobrando. Economia enxuta os paralisa.
+
+
+================================================================================
+15. PALAVRAS-CHAVE APROVADAS (61 total — lista resumida por categoria)
+================================================================================
+
+COMBATE:
+  Atropelar, Blindado(X), Toque Mortal, Veneno(X), Retaliação(X), Amedrontar,
+  Escudo Divino, Perfurar, Drenar, Elo Vital, Ímpeto, Vigilância, Voar,
+  Escudo (Hexproof), Guardião, Provocar, Retaliação, Bastião, Intervenção.
+
+MOVIMENTAÇÃO:
+  Avanço, Retirada, Tocaia(X), Gancho, Repulsão, Investida, Recuar,
+  Alcance, Ataque Estendido, Flanquear.
+
+CONTROLE:
+  Aprisionar(X), Silenciar, Sombra, Radar, Congelar, Égide(X).
+
+RECURSOS E DECK:
+  Dragar(X), Vaticinar(X), Exumar, Sobrecarga, Canalizar, Tributo,
+  Oferenda, Roubo, Sifão, Ressoar.
+
+CICLO DE VIDA / EFEITOS:
+  Invocação (Battlecry), Último Suspiro (Deathrattle), Eco, Herança,
+  Possessão, Infundir, Revelação, Dádiva, Degradação Contagiosa.
+
+POSIÇÃO E PASSIVAS:
+  Comandar, Supremacia, Elo de Linha, Meditar, Hierarquia, Simbiose,
+  Suprimento, Transpor.
+
+TEMPORAIS / CONDICIONAIS:
+  Ascensão(X), Efêmero, Hibernar, Vingança, Limiar.
+
+NOTA: Todos os nomes são PROVISÓRIOS — serão renomeados para o universo do jogo.
+
+
+================================================================================
+16. CARTAS COM SELO DE AUTORIA PROTEGIDA
+================================================================================
+
+Cartas marcadas com o selo [Criador] são designs 100% do Bruno Bento.
+O sistema as reconhece como "Sagradas":
+- NÃO podem ser editadas, nerfadas, buffadas ou removidas sem permissão explícita.
+
+Exemplos identificados nas decklists:
+  - Horror das Mil Ventosas [Criador] — Abissais
+  - Sábio das Marés [Criador] — Abissais
+  - Aranha Lobo [Criador] — Aranhas
+  - Farol do Abismo [Criador] — Relíquia Abissais
+  - Altar das Profundezas [Criador] — Relíquia Abissais
+  - Tufão Tropical [Criador] — Abissais
+
+
+================================================================================
+17. STATUS DAS DECKLISTS
+================================================================================
+
+Arquétipos com decklist completa documentada:
+  - Abissais: SIM (100 cartas + 5 Comandantes + Tokens)
+  - Aranhas:  SIM (arquivo existe)
+
+Arquétipos SEM decklist ainda:
+  - Anjos, Demônios, Dragões, Mecânicos, Pútridos, Goblins, Espectros, Sombrios
+
+
+================================================================================
+18. PONTOS EM ABERTO / INCOMPLETOS (identificados na leitura)
+================================================================================
+
+1. Os nomes das palavras-chave são PROVISÓRIOS — renomear para o universo do jogo.
+
+2. A mecânica de MARÉ dos Abissais precisa de formalização numérica:
+   - Quantos níveis existem?
+   - Como exatamente sobe (1 por efeito? por fase?)
+   - Qual o nível máximo?
+   - Como os custos de Maré se escalam?
+
+3. O sistema de FÉ dos Anjos precisa de mais detalhes numéricos:
+   - Qual o máximo de Fé acumulável?
+   - Quantos Comandantes do Extra Deck custam X de Fé?
+
+4. Mecânicas dos GOBLINS não estão no formato 3+2 formalmente
+   (tem 3 mecânicas mas não há 2 secundárias nomeadas).
+
+5. Mecânicas dos ESPECTROS: o documento diz "Mínimo 3" — faltam as 2 secundárias.
+
+6. Mecânicas dos SOMBRIOS: mesma situação — 3 principais, sem 2 secundárias nomeadas.
+
+7. Modo de jogo CARTAS ALEATÓRIAS está planejado mas completamente não especificado.
+
+8. 8 decklists faltando (Anjos, Demônios, Dragões, Mecânicos, Pútridos, Goblins,
+   Espectros, Sombrios).
+
+9. O arquivo Regras_Sistemas.md existe duplicado na raiz E em Regras/
+   (Regras_Sistemas.md e Regras/Regras_Sistemas.md) — possível inconsistência.
+
+
+================================================================================
+19. REGRAS DE COLABORAÇÃO DEFINIDAS PELO CRIADOR
+================================================================================
+
+- Cartas com creator_seal = 1: NUNCA editar stats, efeitos ou remover sem
+  permissão explícita do Bruno.
+- Regras do jogo: nunca alterar fundamentos sem aprovação.
+- Éter SEMPRE reseta no fim do turno (exceto Tesouro dos Dragões).
+- Dano excedente NÃO passa para o jogador sem Atropelar ou Perfurar.
+- Deck: exatamente 100 cartas no Main + 5 no Extra + 12 Relíquias.
+
+
+================================================================================
+FIM DO DOCUMENTO
+Gerado em: 2026-04-09
+Baseado em leitura completa de: Jogo carta/ (todos os arquivos)
+================================================================================
