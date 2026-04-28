@@ -80,6 +80,20 @@ export function PlayPage() {
     }
   }
 
+  async function createTestDeck() {
+    try {
+      setStatusMsg('Criando deck de teste…');
+      const { deckId } = await api.post<{ deckId: string }>('/decks/test-deck', {});
+      const { decks: list } = await api.get<{ decks: DeckSummary[] }>('/decks');
+      setDecks(list);
+      setSelectedDeckId(deckId);
+      setStatusMsg('Deck de teste criado!');
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      setStatusMsg(err.message ?? 'Erro ao criar deck de teste.');
+    }
+  }
+
   function handleQuickMatch() {
     if (!selectedDeckId) return;
     const socket = getSocket();
@@ -199,42 +213,54 @@ export function PlayPage() {
                 Você não possui um deck válido (100 cartas + 5 comandantes).
               </div>
               <button
+                onClick={createTestDeck}
+                style={{
+                  padding: '8px 16px', borderRadius: '8px',
+                  border: '1px solid #4ade80', background: 'rgba(74,222,128,0.08)',
+                  color: '#4ade80', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                🧪 Criar Deck de Teste
+              </button>
+              <button
                 onClick={createStarterDeck}
                 style={{
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--accent)',
-                  background: 'var(--accent-subtle)',
-                  color: 'var(--accent)',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
+                  padding: '8px 16px', borderRadius: '8px',
+                  border: '1px solid var(--accent)', background: 'var(--accent-subtle)',
+                  color: 'var(--accent)', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
                 }}
               >
                 + Criar Deck Inicial
               </button>
             </div>
           ) : (
-            <select
-              value={selectedDeckId}
-              onChange={e => setSelectedDeckId(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '8px',
-                border: '1px solid var(--border)',
-                background: 'var(--bg-secondary)',
-                color: 'var(--text-primary)',
-                fontSize: '13px',
-                cursor: 'pointer',
-              }}
-            >
-              {validDecks.map(d => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.main_count} cartas)
-                </option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <select
+                value={selectedDeckId}
+                onChange={e => setSelectedDeckId(e.target.value)}
+                style={{
+                  width: '100%', padding: '8px 12px', borderRadius: '8px',
+                  border: '1px solid var(--border)', background: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer',
+                }}
+              >
+                {validDecks.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} ({d.main_count} cartas)
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={createTestDeck}
+                style={{
+                  padding: '5px 10px', borderRadius: '6px', alignSelf: 'flex-start',
+                  border: '1px solid rgba(74,222,128,0.4)', background: 'rgba(74,222,128,0.06)',
+                  color: '#4ade80', fontSize: '11px', cursor: 'pointer',
+                }}
+              >
+                🧪 + Novo Deck de Teste
+              </button>
+            </div>
           )}
         </div>
 

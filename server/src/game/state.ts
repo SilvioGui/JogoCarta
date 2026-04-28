@@ -287,8 +287,8 @@ export function getOpponent(state: GameState, playerId: string): PlayerState {
 export function checkWinConditions(state: GameState): boolean {
   const [p1, p2] = state.playerOrder.map(id => state.players[id]);
 
-  const p1Dead = p1.hp <= 0 || (p1.deck.length === 0 && /* tentou sacar */ false);
-  const p2Dead = p2.hp <= 0 || (p2.deck.length === 0 && false);
+  const p1Dead = p1.hp <= 0 || p1.hasLost;
+  const p2Dead = p2.hp <= 0 || p2.hasLost;
 
   if (p1Dead && p2Dead) {
     state.isDraw = true;

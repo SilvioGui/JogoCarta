@@ -4,6 +4,7 @@ import type { PublicGameState, GameEvent, GameAction, GameCard } from '../types/
 interface GameStore {
   gameState: PublicGameState | null;
   events: GameEvent[];
+  eventLog: GameEvent[];   // log acumulado de todos os eventos da partida
   myUserId: string | null;
   roomCode: string | null;
   isConnecting: boolean;
@@ -32,6 +33,7 @@ interface GameStore {
 export const useGameStore = create<GameStore>((set, get) => ({
   gameState: null,
   events: [],
+  eventLog: [],
   myUserId: null,
   roomCode: null,
   isConnecting: false,
@@ -39,14 +41,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
   selectedCard: null,
   interactionMode: 'idle',
 
-  setGameState: (state, events) => set({ gameState: state, events }),
+  setGameState: (state, events) => set(prev => ({
+    gameState: state,
+    events,
+    eventLog: events.length > 0
+      ? [...prev.eventLog, ...events].slice(-60)  // manter últimos 60
+      : prev.eventLog,
+  })),
   setRoom: (roomCode, myUserId) => set({ roomCode, myUserId }),
   setConnecting: (v) => set({ isConnecting: v }),
   setError: (e) => set({ error: e }),
   selectCard: (card) => set({ selectedCard: card }),
   setInteractionMode: (mode) => set({ interactionMode: mode }),
   clearGame: () => set({
-    gameState: null, events: [], roomCode: null,
+    gameState: null, events: [], eventLog: [], roomCode: null,
     selectedCard: null, interactionMode: 'idle', error: null,
   }),
 

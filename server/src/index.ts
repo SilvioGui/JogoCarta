@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
+import jwt from 'jsonwebtoken';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { runMigrations } from './db/migrate';
@@ -11,14 +12,27 @@ import authRoutes from './api/routes/auth.routes';
 import deckRoutes from './api/routes/deck.routes';
 import { registerGameHandlers } from './socket/game.socket';
 import { registerMatchmakingHandlers } from './socket/matchmaking.socket';
+import { registerTutorialHandlers } from './socket/tutorial.socket';
 
 const app = express();
 const httpServer = createServer(app);
+
+// Suporte a múltiplas origens separadas por vírgula no FRONTEND_URL
+// Ex: FRONTEND_URL=http://localhost:5173,http://192.168.1.100:5173
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+function corsOrigin(origin: string | undefined, cb: (e: Error | null, allow?: boolean) => void) {
+  // Sem origin = mesma origem ou servidor-a-servidor (permitido)
+  if (!origin) return cb(null, true);
+  if (allowedOrigins.includes(origin)) return cb(null, true);
+  cb(new Error(`CORS: origin não permitida — ${origin}`));
+}
+
 const io = new SocketIOServer(httpServer, {
-  cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-    credentials: true,
-  },
+  cors: { origin: corsOrigin, credentials: true },
 });
 
 // Segurança
@@ -29,7 +43,7 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:'],
-      connectSrc: ["'self'", 'ws://localhost:*', 'wss://*'],
+      connectSrc: ["'self'", 'ws://localhost:*', 'wss://*', 'ws://*'],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
@@ -39,7 +53,7 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: corsOrigin,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -67,7 +81,6 @@ io.use((socket, next) => {
   if (!token) return next(new Error('Token não fornecido'));
 
   try {
-    const jwt = require('jsonwebtoken');
     const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as { sub: string; username: string };
     (socket as unknown as { data: { userId: string; username: string } }).data = {
       userId: payload.sub,
@@ -83,11 +96,18 @@ io.on('connection', (socket) => {
   console.log(`[Socket] Conectado: ${(socket as unknown as { data: { username: string } }).data.username}`);
   registerGameHandlers(io, socket);
   registerMatchmakingHandlers(io, socket);
+  registerTutorialHandlers(io, socket);
 });
 
 // Health check
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok' });
+});
+
+// Handler global de erros (deve ser o último middleware)
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[Server] Erro não tratado:', err.message);
+  res.status(500).json({ error: 'Erro interno do servidor' });
 });
 
 // Inicialização

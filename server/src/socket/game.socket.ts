@@ -1,21 +1,16 @@
 import type { Server, Socket } from 'socket.io';
-import type { GameState, GameAction } from '../types/game.types';
-import { createGameState, dealInitialHands, serializeForPlayer } from '../game/state';
+import type { GameAction } from '../types/game.types';
+import { createGameState, dealInitialHands, serializeForPlayer, drawCards, shuffle } from '../game/state';
 import { processAction } from '../game/engine';
 import { getDb } from '../db/database';
+import { activeGames, gameRooms, socketPlayers } from './game.state';
+import { isBotRoom, scheduleBotAction } from '../game/bot';
 
 // =============================================================================
 // SOCKET.IO — EVENTOS DE PARTIDA
 // O servidor é a ÚNICA fonte de verdade. O cliente envia intenções,
 // o servidor valida, executa e transmite o novo estado.
 // =============================================================================
-
-// Partidas ativas em memória
-const activeGames = new Map<string, GameState>();
-// roomCode → socketIds dos jogadores
-const gameRooms = new Map<string, Set<string>>();
-// socketId → { userId, roomCode }
-const socketPlayers = new Map<string, { userId: string; username: string; roomCode: string }>();
 
 export function registerGameHandlers(io: Server, socket: Socket) {
   const userId = (socket as unknown as { data: { userId: string; username: string } }).data.userId;
@@ -35,7 +30,7 @@ export function registerGameHandlers(io: Server, socket: Socket) {
         gameRooms.set(roomCode, new Set());
       }
       gameRooms.get(roomCode)!.add(socket.id);
-      socketPlayers.set(socket.id, { userId, username, roomCode });
+      socketPlayers.set(socket.id, { userId, username, roomCode, deckId });
 
       const roomSockets = gameRooms.get(roomCode)!;
 
@@ -58,8 +53,8 @@ export function registerGameHandlers(io: Server, socket: Socket) {
       const [s1, s2] = players.map(sid => socketPlayers.get(sid)!);
 
       const [deck1, deck2] = await Promise.all([
-        loadDeck(s1.userId, deckId),
-        loadDeck(s2.userId, deckId),   // em produção cada player envia seu próprio deckId
+        loadDeck(s1.userId, s1.deckId),
+        loadDeck(s2.userId, s2.deckId),
       ]);
 
       const state = createGameState(
@@ -68,6 +63,9 @@ export function registerGameHandlers(io: Server, socket: Socket) {
         roomCode,
       );
       dealInitialHands(state);
+      // Começar direto na Fase Principal 1 (mãos iniciais já foram distribuídas)
+      state.phase = 'main1';
+      state.firstPlayerSkippedDraw = true;
       activeGames.set(roomCode, state);
 
       // Enviar estado personalizado para cada jogador
@@ -75,6 +73,11 @@ export function registerGameHandlers(io: Server, socket: Socket) {
         const pData = socketPlayers.get(sid)!;
         const serialized = serializeForPlayer(state, pData.userId);
         io.to(sid).emit('game:state', { state: serialized, events: [] });
+      }
+
+      // Disparar bot se for sala tutorial
+      if (isBotRoom(roomCode)) {
+        scheduleBotAction(io, roomCode, activeGames, gameRooms, socketPlayers);
       }
 
       callback({ ok: true, waiting: false });
@@ -111,6 +114,11 @@ export function registerGameHandlers(io: Server, socket: Socket) {
       }
     }
 
+    // Disparar bot se for sala tutorial
+    if (isBotRoom(roomCode)) {
+      scheduleBotAction(io, roomCode, activeGames, gameRooms, socketPlayers);
+    }
+
     callback({ ok: true });
   });
 
@@ -139,17 +147,18 @@ export function registerGameHandlers(io: Server, socket: Socket) {
     }
 
     // Devolver 7 cartas ao deck, embaralhar e sacar 7 novas
-    import('../game/state').then(({ drawCards, shuffle }) => {
-      player.deck.push(...player.hand);
-      player.hand = [];
-      shuffle(player.deck);
-      drawCards(player, 7);
-      player.mulliganUsed = true;
+    for (const card of player.hand) {
+      card.zone = 'deck';
+    }
+    player.deck.push(...player.hand);
+    player.hand = [];
+    shuffle(player.deck);
+    drawCards(player, 7);
+    player.mulliganUsed = true;
 
-      const serialized = serializeForPlayer(state, userId);
-      socket.emit('game:state', { state: serialized, events: [] });
-      callback({ ok: true });
-    });
+    const serialized = serializeForPlayer(state, userId);
+    socket.emit('game:state', { state: serialized, events: [] });
+    callback({ ok: true });
   });
 
   // ------------------------------------------------------------------
@@ -182,9 +191,21 @@ export function registerGameHandlers(io: Server, socket: Socket) {
 }
 
 // ------------------------------------------------------------------
+// Normaliza keyword de display para código interno do motor
+// "Escudo Divino" → "escudo_divino" | "Ímpeto" → "impeto"
+// ------------------------------------------------------------------
+function normalizeKeyword(k: string): string {
+  return k
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')  // remove acentos
+    .replace(/\s+/g, '_');            // espaços → underscores
+}
+
+// ------------------------------------------------------------------
 // Carregar deck do banco de dados
 // ------------------------------------------------------------------
-async function loadDeck(userId: string, deckId: string): Promise<{
+export async function loadDeck(userId: string, deckId: string): Promise<{
   main: import('../types/game.types').CardDefinition[];
   extra: import('../types/game.types').CardDefinition[];
 }> {
@@ -229,7 +250,7 @@ async function loadDeck(userId: string, deckId: string): Promise<{
       damage: row.damage ?? 0,
       health: row.health ?? 0,
       description: row.description,
-      keywords: JSON.parse(row.keywords || '[]'),
+      keywords: (JSON.parse(row.keywords || '[]') as string[]).map(normalizeKeyword),
       isExtraDeck: row.isExtraDeck === 1,
       creatorSeal: row.creatorSeal === 1,
       rarity: row.rarity as 'common' | 'uncommon' | 'rare' | 'legendary',

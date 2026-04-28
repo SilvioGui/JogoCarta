@@ -8,6 +8,35 @@ const router = Router();
 router.use(authMiddleware);
 
 // ---------------------------------------------------------------------------
+// GET /api/decks/cards/all — todas as cartas disponíveis (coleção)
+// DEVE ficar ANTES de /:id para não ser capturada pela rota paramétrica
+// ---------------------------------------------------------------------------
+router.get('/cards/all', (req, res) => {
+  const db = getDb();
+
+  const { archetype, type, search } = req.query as Record<string, string>;
+
+  let query = `
+    SELECT c.id, c.name, c.archetype_id, c.card_type, c.ether_cost,
+           c.damage, c.health, c.description, c.keywords, c.rarity,
+           c.is_extra_deck, c.creator_seal
+    FROM cards c
+    WHERE 1=1
+  `;
+  const params: string[] = [];
+
+  if (archetype) { query += ' AND c.archetype_id = ?'; params.push(archetype); }
+  if (type) { query += ' AND c.card_type = ?'; params.push(type); }
+  if (search) { query += ' AND c.name LIKE ?'; params.push(`%${search}%`); }
+
+  query += ' ORDER BY c.card_type, c.ether_cost, c.name';
+
+  const cards = db.prepare(query).all(...params);
+
+  res.json({ cards });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/decks — listar decks do usuário
 // ---------------------------------------------------------------------------
 router.get('/', (req, res) => {
@@ -97,8 +126,10 @@ router.put('/:id', validate(updateDeckSchema), (req, res) => {
 
   if (!deck) return res.status(404).json({ error: 'Deck não encontrado' });
 
-  if (name) db.prepare('UPDATE decks SET name = ?, updated_at = datetime("now") WHERE id = ?').run(name, req.params.id);
-  if (description !== undefined) db.prepare('UPDATE decks SET description = ? WHERE id = ?').run(description, req.params.id);
+  db.transaction(() => {
+    if (name) db.prepare("UPDATE decks SET name = ?, updated_at = datetime('now') WHERE id = ?").run(name, req.params.id);
+    if (description !== undefined) db.prepare("UPDATE decks SET description = ?, updated_at = datetime('now') WHERE id = ?").run(description, req.params.id);
+  })();
 
   res.json({ ok: true });
 });
@@ -165,41 +196,13 @@ router.put('/:id/cards', validate(syncCardsSchema), (req, res) => {
     }
 
     db.prepare(
-      'UPDATE decks SET is_valid = ?, updated_at = datetime("now") WHERE id = ?'
+      "UPDATE decks SET is_valid = ?, updated_at = datetime('now') WHERE id = ?"
     ).run(isValid ? 1 : 0, req.params.id);
   });
 
   syncTx();
 
   res.json({ ok: true, isValid, mainTotal, extraTotal });
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/decks/cards/all — todas as cartas disponíveis (coleção)
-// ---------------------------------------------------------------------------
-router.get('/cards/all', (req, res) => {
-  const db = getDb();
-
-  const { archetype, type, search } = req.query as Record<string, string>;
-
-  let query = `
-    SELECT c.id, c.name, c.archetype_id, c.card_type, c.ether_cost,
-           c.damage, c.health, c.description, c.keywords, c.rarity,
-           c.is_extra_deck, c.creator_seal
-    FROM cards c
-    WHERE 1=1
-  `;
-  const params: string[] = [];
-
-  if (archetype) { query += ' AND c.archetype_id = ?'; params.push(archetype); }
-  if (type) { query += ' AND c.card_type = ?'; params.push(type); }
-  if (search) { query += ' AND c.name LIKE ?'; params.push(`%${search}%`); }
-
-  query += ' ORDER BY c.card_type, c.ether_cost, c.name';
-
-  const cards = db.prepare(query).all(...params);
-
-  res.json({ cards });
 });
 
 // ---------------------------------------------------------------------------
@@ -224,25 +227,29 @@ router.post('/starter', (req, res) => {
   // Montar deck de 100 cartas com as cartas seed
   // Principais (100): mistura de monstros comuns + terrenos + magias
   const starterMain: Array<[string, number]> = [
-    // Monstros (65 cartas)
+    // Monstros genéricos (21 cartas)
     ['gen_001', 3], ['gen_002', 3], ['gen_003', 3], ['gen_004', 2],
     ['gen_005', 3], ['gen_006', 3], ['gen_007', 2], ['gen_008', 2],
-    ['ang_001', 3], ['ang_002', 2], ['ang_003', 1], ['ang_004', 2], ['ang_005', 3],
+    // Anjos (10 cartas — ang_003 é Comandante do Extra Deck)
+    ['ang_001', 3], ['ang_002', 2], ['ang_004', 2], ['ang_005', 3],
+    // Dragões (10 cartas — drg_003 é Comandante do Extra Deck)
     ['drg_001', 3], ['drg_002', 2], ['drg_004', 3], ['drg_005', 2],
+    // Demônios (7 cartas — dem_003 e dem_005 são Comandantes do Extra Deck)
+    ['dem_001', 2], ['dem_002', 2], ['dem_004', 3],
+    // Goblins (11 cartas)
     ['gob_001', 3], ['gob_002', 3], ['gob_003', 2], ['gob_004', 3],
+    // Mecânicos (8 cartas — mec_003 é Comandante do Extra Deck)
     ['mec_001', 3], ['mec_002', 3], ['mec_004', 2],
-    // Magias (15 cartas)
+    // Magias (13 cartas)
     ['mag_001', 3], ['mag_002', 3], ['mag_003', 2], ['mag_004', 2], ['mag_006', 2], ['mag_005', 1],
     // Reações (5 cartas)
     ['rea_001', 3], ['rea_002', 2],
-    // Terrenos (20 cartas)
+    // Terrenos (15 cartas)
     ['ter_001', 3], ['ter_002', 3], ['ter_003', 3], ['ter_004', 3], ['ter_005', 3],
   ];
+  // Total: 21+10+10+7+11+8+13+5+15 = 100
 
-  // Verificar total
   const mainTotal = starterMain.reduce((s, [, q]) => s + q, 0);
-  // Ajustar para exatamente 100 se necessário
-  // (65 + 15 + 5 + 15 = 100 — calculado acima)
 
   const starterExtra: string[] = [
     'ang_003', 'drg_003', 'dem_003', 'dem_005', 'mec_003',
@@ -272,6 +279,66 @@ router.post('/starter', (req, res) => {
   db.prepare('UPDATE decks SET is_valid = ? WHERE id = ?').run(isValid ? 1 : 0, deckId);
 
   res.status(201).json({ deckId, isValid, mainTotal: realTotal, extraTotal: starterExtra.length });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/decks/test-deck — criar deck de teste com cartas em branco
+// Pode ser criado mesmo que o usuário já tenha outros decks.
+// ---------------------------------------------------------------------------
+router.post('/test-deck', (req, res) => {
+  const db = getDb();
+  const userId = req.user!.sub;
+
+  const deckId = (db.prepare(`
+    INSERT INTO decks (user_id, name, description, is_valid)
+    VALUES (?, '[TESTE] Deck Tabuleiro', 'Deck com cartas em branco para testar o tabuleiro.', 1)
+    RETURNING id
+  `).get(userId) as { id: string }).id;
+
+  // Deck principal (100 cartas):
+  //   20 monstros × 3 = 60  (tst_m01..tst_m20)
+  //    5 magias    × 3 = 15  (tst_sp01..tst_sp05)
+  //    3 reações   × 3 =  9  (tst_rx01..tst_rx03)
+  //    5 terrenos  × 3 = 15  (tst_tr01..tst_tr05)
+  //    1 terreno   × 1 =  1  (tst_tr06)
+  //                       = 100
+  const testMain: Array<[string, number]> = [
+    ['tst_m01', 3], ['tst_m02', 3], ['tst_m03', 3], ['tst_m04', 3], ['tst_m05', 3],
+    ['tst_m06', 3], ['tst_m07', 3], ['tst_m08', 3], ['tst_m09', 3], ['tst_m10', 3],
+    ['tst_m11', 3], ['tst_m12', 3], ['tst_m13', 3], ['tst_m14', 3], ['tst_m15', 3],
+    ['tst_m16', 3], ['tst_m17', 3], ['tst_m18', 3], ['tst_m19', 3], ['tst_m20', 3],
+    ['tst_sp01', 3], ['tst_sp02', 3], ['tst_sp03', 3], ['tst_sp04', 3], ['tst_sp05', 3],
+    ['tst_rx01', 3], ['tst_rx02', 3], ['tst_rx03', 3],
+    ['tst_tr01', 3], ['tst_tr02', 3], ['tst_tr03', 3], ['tst_tr04', 3], ['tst_tr05', 3],
+    ['tst_tr06', 1],
+  ];
+
+  const testExtra: string[] = [
+    'tst_cmd01', 'tst_cmd02', 'tst_cmd03', 'tst_cmd04', 'tst_cmd05',
+  ];
+
+  const insertTx = db.transaction(() => {
+    const insertCard = db.prepare(
+      'INSERT OR IGNORE INTO deck_cards (deck_id, card_id, quantity, is_extra_deck) VALUES (?, ?, ?, ?)'
+    );
+    for (const [cardId, qty] of testMain) {
+      insertCard.run(deckId, cardId, qty, 0);
+    }
+    for (const cardId of testExtra) {
+      insertCard.run(deckId, cardId, 1, 1);
+    }
+  });
+
+  insertTx();
+
+  const realTotal = (db.prepare(
+    'SELECT SUM(quantity) as total FROM deck_cards WHERE deck_id = ? AND is_extra_deck = 0'
+  ).get(deckId) as { total: number }).total;
+
+  const isValid = realTotal === 100 && testExtra.length === 5;
+  db.prepare('UPDATE decks SET is_valid = ? WHERE id = ?').run(isValid ? 1 : 0, deckId);
+
+  res.status(201).json({ deckId, isValid, mainTotal: realTotal, extraTotal: testExtra.length });
 });
 
 export default router;

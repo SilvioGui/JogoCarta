@@ -121,13 +121,21 @@ export function PhaseIndicator() {
       )}
 
       {!isMyTurn && (
-        <div style={{
-          fontSize: '9px',
-          color: 'var(--text-muted)',
-          fontStyle: 'italic',
-        }}>
-          Aguardando oponente…
-        </div>
+        <>
+          {/* Defensor pode passar sem bloquear */}
+          {combat?.step === 'declare_block' && (
+            <ActionBtn
+              label="Não Bloquear →"
+              color="#3b82f6"
+              onClick={actions.passPriority}
+            />
+          )}
+          {combat?.step !== 'declare_block' && (
+            <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              Aguardando oponente…
+            </div>
+          )}
+        </>
       )}
     </div>
   );

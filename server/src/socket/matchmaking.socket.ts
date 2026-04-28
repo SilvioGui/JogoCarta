@@ -49,7 +49,8 @@ export function registerMatchmakingHandlers(io: Server, socket: Socket) {
       opponentUsername: username,
     });
 
-    callback({ ok: true, roomCode, deckId: room.deckId, opponentUsername: room.username });
+    // deckId aqui é o deck do GUEST (não do host) — cada um usa o seu próprio
+    callback({ ok: true, roomCode, deckId, opponentUsername: room.username });
   });
 
   // ------------------------------------------------------------------

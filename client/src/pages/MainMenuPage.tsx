@@ -163,7 +163,7 @@ function buildMenuItems(
       description: t.tutorial.description,
       status: t.tutorial.status,
       tutorial: t.tutorial.tutorial,
-      onActivate: openTutorial,
+      onActivate: () => navigate('/tutorial'),
     },
     {
       key: 'ranking',

@@ -372,8 +372,10 @@ function actionDeclareAttack(
     if (frontNotEmpty) return err('Não é possível atacar diretamente com unidades na Linha Superior inimiga');
   }
 
-  // Virar o atacante
-  attacker.isTapped = true;
+  // Virar o atacante (Vigilância: ataca sem virar)
+  if (!attacker.keywords.includes('vigilancia')) {
+    attacker.isTapped = true;
+  }
   attacker.attackedThisTurn = true;
 
   state.combat = {
@@ -428,7 +430,7 @@ function actionDeclareBlock(
       if (!hasRadar) return err('Atacante possui Sombra — não pode ser bloqueado sem Radar');
     }
     // Amedrontar: unidades com Poder inferior não podem bloquear
-    if (attacker.keywords.includes('amedrontar') && blocker.damage < attacker.etherCost) {
+    if (attacker.keywords.includes('amedrontar') && blocker.damage < attacker.damage) {
       return err('Amedrontar: seu Poder é insuficiente para bloquear este atacante');
     }
   }
@@ -453,16 +455,22 @@ function actionPassPriority(
   playerId: string,
   events: GameEvent[],
 ): ActionResult {
-  // Se há combate aguardando resolução, avançar para o dano
-  if (state.combat && state.combat.step === 'reaction_window') {
-    return resolveCombatDamage(state, events);
+  if (state.combat) {
+    // Defensor passa sem bloquear — avança para janela de reação
+    if (state.combat.step === 'declare_block' && playerId === state.combat.defenderPlayerId) {
+      state.combat.step = 'reaction_window';
+      return ok(state, events);
+    }
+    // Janela de reação — qualquer jogador pode passar para resolver o dano
+    if (state.combat.step === 'reaction_window') {
+      return resolveCombatDamage(state, events);
+    }
   }
 
   // Resolver o topo da Corrente
   if (state.chain.length > 0) {
     const item = state.chain.pop()!;
     events.push({ type: 'chain_resolved', item });
-    // Resolução de efeitos específicos será expandida com o sistema de efeitos completo
   }
 
   return ok(state, events);
@@ -507,22 +515,22 @@ function resolveCombatDamage(state: GameState, events: GameEvent[]): ActionResul
     const atkHasTouchDeath = attacker.keywords.includes('toque_mortal');
     const defHasTouchDeath = defender.keywords.includes('toque_mortal');
 
-    // Blindado: reduz dano recebido
+    // Blindado: reduz dano recebido (formato: "blindado:N")
     const atkBlinded = attacker.keywords.filter(k => k.startsWith('blindado')).length > 0
-      ? parseInt(attacker.keywords.find(k => k.startsWith('blindado'))?.split(':')[1] ?? '0') : 0;
+      ? (parseInt(attacker.keywords.find(k => k.startsWith('blindado'))?.split(':')[1] ?? '') || 0) : 0;
     const defBlinded = defender.keywords.filter(k => k.startsWith('blindado')).length > 0
-      ? parseInt(defender.keywords.find(k => k.startsWith('blindado'))?.split(':')[1] ?? '0') : 0;
+      ? (parseInt(defender.keywords.find(k => k.startsWith('blindado'))?.split(':')[1] ?? '') || 0) : 0;
 
-    // Escudo Divino: ignora o primeiro dano
+    // Escudo Divino: ignora o primeiro dano RECEBIDO pela criatura
     if (defender.keywords.includes('escudo_divino')) {
       const idx = defender.keywords.indexOf('escudo_divino');
       defender.keywords.splice(idx, 1); // quebra o escudo
-      defDmg = 0; // atacante não recebe dano do defensor com escudo divino
+      atkDmg = 0; // defensor não recebe dano do atacante
     }
     if (attacker.keywords.includes('escudo_divino') && defDmg > 0) {
       const idx = attacker.keywords.indexOf('escudo_divino');
       attacker.keywords.splice(idx, 1);
-      defDmg = 0;
+      defDmg = 0; // atacante não recebe dano do defensor
     }
 
     // Aplicar Blindado
@@ -542,7 +550,8 @@ function resolveCombatDamage(state: GameState, events: GameEvent[]): ActionResul
     }
 
     // Atropelar / Perfurar: dano excedente ao jogador
-    const excess = atkDmg - defender.currentHealth;
+    // currentHealth já foi reduzido, então valores negativos = dano excedente
+    const excess = -defender.currentHealth;
     if (excess > 0 && defender.currentHealth <= 0) {
       if (attacker.keywords.includes('atropelar') || attacker.keywords.includes('perfurar')) {
         defenderPlayer.hp -= excess;
@@ -647,27 +656,6 @@ function actionNextPhase(
   state.phase = nextPhase;
   events.push({ type: 'phase_changed', phase: nextPhase });
 
-  // Efeitos de transição de fase
-  if (nextPhase === 'draw') {
-    const player = state.players[playerId];
-    // Primeiro turno do jogo: quem começa pula o saque
-    if (state.turn === 1 && !state.firstPlayerSkippedDraw) {
-      state.firstPlayerSkippedDraw = true;
-    } else {
-      if (player.deck.length === 0) {
-        player.hp = 0;
-        player.hasLost = true;
-        checkWinConditions(state);
-        events.push({ type: 'game_ended', winner: state.winner, isDraw: state.isDraw, reason: state.endReason });
-      } else {
-        const drawn = drawCards(player, 1);
-        if (drawn.length > 0) {
-          events.push({ type: 'card_drawn', playerId, card: drawn[0] });
-        }
-      }
-    }
-  }
-
   return ok(state, events);
 }
 
@@ -707,12 +695,22 @@ function actionEndTurn(
   untapAllCards(nextPlayer);
   applyEtherGeneration(nextPlayer);
 
-  state.phase = 'start';
-  events.push({ type: 'phase_changed', phase: 'start' });
+  // Sacar carta automático no início do turno (Deck Out check)
+  if (nextPlayer.deck.length === 0) {
+    nextPlayer.hp = 0;
+    nextPlayer.hasLost = true;
+    checkWinConditions(state);
+    events.push({ type: 'game_ended', winner: state.winner, isDraw: state.isDraw, reason: state.endReason });
+    return ok(state, events);
+  }
+  const autoDrawn = drawCards(nextPlayer, 1);
+  if (autoDrawn.length > 0) {
+    events.push({ type: 'card_drawn', playerId: opponentId, card: autoDrawn[0] });
+  }
 
-  // Avançar automaticamente para a Fase de Compra
-  state.phase = 'draw';
-  events.push({ type: 'phase_changed', phase: 'draw' });
+  // Começar direto na Fase Principal 1 (draw já foi feito acima)
+  state.phase = 'main1';
+  events.push({ type: 'phase_changed', phase: 'main1' });
 
   return ok(state, events);
 }

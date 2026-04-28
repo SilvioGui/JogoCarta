@@ -6,9 +6,10 @@ interface PlayerFieldProps {
   player: PublicPlayerState;
   isMine: boolean;
   isActive: boolean;
+  onHoverCard?: (card: GameCard | null) => void;
 }
 
-export function PlayerField({ player, isMine, isActive }: PlayerFieldProps) {
+export function PlayerField({ player, isMine, isActive, onHoverCard }: PlayerFieldProps) {
   const { selectedCard, interactionMode, selectCard, setInteractionMode } = useGameStore();
   const actions = useGameActions();
   const combat = useGameStore(s => s.gameState?.combat);
@@ -72,7 +73,10 @@ export function PlayerField({ player, isMine, isActive }: PlayerFieldProps) {
   }
 
   const isAttackTarget = interactionMode === 'select_attack_target' && !isMine;
-  const isBlockPhase = combat?.step === 'declare_block' && isMine && !isActive;
+  // Fase de bloqueio: É MINHA vez de bloquear quando sou o defensor (não estou no turno ativo)
+  const isBlockPhase = combat?.step === 'declare_block' &&
+    isMine &&
+    combat.defenderPlayerId === useGameStore.getState().myUserId;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
@@ -90,6 +94,7 @@ export function PlayerField({ player, isMine, isActive }: PlayerFieldProps) {
         onBlock={handleBlock}
         onRetreat={handleRetreat}
         onDirectAttack={isAttackTarget ? handleDirectAttack : undefined}
+        onHoverCard={onHoverCard}
         selectedCard={selectedCard}
         combat={combat ?? null}
       />
@@ -108,6 +113,7 @@ export function PlayerField({ player, isMine, isActive }: PlayerFieldProps) {
         onBlock={() => {}}
         onAdvance={handleAdvance}
         onRevert={handleRevert}
+        onHoverCard={onHoverCard}
         selectedCard={selectedCard}
         combat={null}
       />
@@ -130,6 +136,7 @@ interface FieldRowProps {
   onRetreat?: (card: GameCard) => void;
   onRevert?: (card: GameCard) => void;
   onDirectAttack?: () => void;
+  onHoverCard?: (card: GameCard | null) => void;
   selectedCard: GameCard | null;
   combat: { attackerInstanceId: string; defenderInstanceId: string | null } | null;
 }
@@ -137,7 +144,7 @@ interface FieldRowProps {
 function FieldRow({
   label, cards, isMine, isActive, rowType, isAttackTarget, isBlockPhase,
   onCardClick, onAttack, onBlock, onAdvance, onRetreat, onRevert,
-  onDirectAttack, selectedCard, combat,
+  onDirectAttack, onHoverCard, selectedCard, combat,
 }: FieldRowProps) {
   return (
     <div
@@ -178,7 +185,12 @@ function FieldRow({
       {/* Cartas */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'flex-start' }}>
         {cards.map(card => (
-          <div key={card.instanceId} style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
+          <div
+            key={card.instanceId}
+            style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}
+            onMouseEnter={() => onHoverCard?.(card)}
+            onMouseLeave={() => onHoverCard?.(null)}
+          >
             <CardComponent
               card={card}
               location={rowType}
@@ -205,14 +217,14 @@ function FieldRow({
                 )}
               </div>
             )}
-            {isBlockPhase && !isMine && rowType === 'front' && (
-              <MiniBtn label="Blk" color="#3b82f6" onClick={() => onBlock(card)} />
+            {isBlockPhase && isMine && rowType === 'front' && !card.isTapped && !card.isResourceMode && (
+              <MiniBtn label="Blk" color="#3b82f6" onClick={() => onBlock(card)} title="Bloquear" />
             )}
           </div>
         ))}
 
-        {/* Área de ataque direto (quando linha inimiga está vazia) */}
-        {isAttackTarget && cards.length === 0 && onDirectAttack && (
+        {/* Área de ataque direto (linha inimiga sem criaturas ativas) */}
+        {isAttackTarget && cards.filter(c => !c.isResourceMode).length === 0 && onDirectAttack && (
           <div
             onClick={onDirectAttack}
             style={{

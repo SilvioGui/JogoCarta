@@ -166,7 +166,7 @@ router.post('/login', loginLimiter, validate(LoginSchema), async (req: Request, 
     ).run(user.id, refreshToken, expiresAt, req.ip, req.headers['user-agent'] || '');
 
     // Atualizar last_login
-    db.prepare('UPDATE users SET last_login = datetime("now") WHERE id = ?').run(user.id);
+    db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(user.id);
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
@@ -197,7 +197,7 @@ router.post('/refresh', (req: Request, res: Response) => {
   }
 
   const session = db
-    .prepare('SELECT * FROM sessions WHERE refresh_token = ? AND expires_at > datetime("now")')
+    .prepare("SELECT * FROM sessions WHERE refresh_token = ? AND expires_at > datetime('now')")
     .get(token) as { user_id: string; id: string } | undefined;
 
   if (!session) {
